@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>KAFRI — 보카챗형 (데이터 반영판)</title>
+<style>
+  :root{
+    --bg:#f2f3f5; --ink:#111; --muted:#6b7280;
+    --brand:#ffe600; --brand-ink:#111;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.5 -apple-system,system-ui,Segoe UI,Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  .app{max-width:1100px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+
+/* topbar */
+  .topbar{
+    position:fixed;top:0;left:0;right:0;height:56px;background:#111;color:#fff;
+    display:flex;align-items:center;padding:0 14px;z-index:90;
+  }
+  .topbar .title{font-weight:700}
+  .topbar .meta{margin-left:12px;font-size:13px;opacity:.9;color:#ddd}
+  .topbar .actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .reset-btn{background:#fff;color:#111;border-radius:8px;padding:6px 10px;border:none;cursor:pointer;font-weight:600}
+
+/* buttons area */
+  .btn-area{
+    position:fixed;left:0;right:0;top:56px;background:var(--brand);
+    padding:8px 10px;border-bottom:1px solid #e6e6e6;z-index:80;
+    display:flex;flex-direction:column;gap:6px;
+  }
+  .row-btns{display:flex;gap:8px;overflow-x:auto;align-items:center;padding-bottom:6px;cursor:grab; -webkit-overflow-scrolling:touch;}
+
+/* button */
+  .btn{
+    flex:0 0 auto;border:1px solid rgba(0,0,0,.06);background:#fff7b0;color:#111;
+    padding:8px 12px;border-radius:999px;font-size:14px;cursor:pointer;white-space:nowrap;
+    box-shadow:0 1px 0 rgba(0,0,0,.04);
+  }
+  .btn.active{background:#111;color:#fff;border-color:#111}
+  .chip-search{margin-left:6px;border-radius:10px;padding:6px 10px;background:#fff;border:1px solid #eee}
+
+/* main content */
+  .container{display:flex;gap:18px;padding:18px;margin-top:calc(56px + 140px)} /* leave space for top fixed areas */
+  .chat{flex:1;overflow:auto;min-height:60vh}
+  .sidebar{width:260px;min-width:200px;max-height:calc(100vh - 220px);overflow:auto;background:transparent;padding-top:8px}
+
+/* results / cards */
+  .grid{display:flex;flex-direction:column;gap:12px}
+  .card{background:#fff;padding:12px;border-radius:12px;border:1px solid #eee;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+  .card h3{margin:0 0 8px 0;font-size:16px}
+  .meta{font-size:13px;color:var(--muted);margin-top:6px}
+
+/* composer fixed bottom */
+  .composer{position:fixed;left:0;right:0;bottom:0;z-index:91;background:#fff;border-top:1px solid #e6e6e6;padding:10px 12px;display:flex;gap:8px;align-items:center;max-width:1100px;margin:0 auto}
+  .composer input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb}
+  .composer button{padding:10px 14px;border-radius:10px;border:0;background:#111;color:#fff;cursor:pointer}
+
+/* responsive */
+  @media (max-width:900px){
+    .container{flex-direction:column;padding:12px;margin-top:calc(56px + 200px)}
+    .sidebar{width:100%;max-height:none}
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">KAFRI — 보카챗형 (데이터 반영)</div>
+      <div class="meta">효능 기반 어종 매핑 적용</div>
+      <div class="actions">
+        <button class="reset-btn" id="resetBtn">초기화 (Reset)</button>
+      </div>
+    </div>
+
+    <div class="btn-area" id="btnArea">
+      <div class="row-btns" id="efficacyRow" aria-label="효능 버튼"></div>
+      <div class="row-btns" id="speciesRow" aria-label="수산물 버튼"></div>
+      <div class="row-btns" id="detailRow" aria-label="세부정보 버튼"></div>
+    </div>
+
+    <div class="container">
+      <main class="chat" id="chat">
+        <div class="controls" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <div style="font-weight:700">선택 요약</div>
+          <div id="summary" class="meta">효능: 없음 · 어종: 없음 · 세부: 없음</div>
+          <div class="hint">예: "고혈압 예방" 입력 → 관련 어종 전체 표시 · 그중 "연어" 입력 → 연어 상세 추가</div>
+        </div>
+        <div id="results" class="grid" aria-live="polite"></div>
+      </main>
+      <aside class="sidebar" id="historyArea">
+        <div class="small" style="padding:8px 6px 0 6px;font-weight:700">검색/히스토리</div>
+        <div id="historyList" style="padding:8px"></div>
+      </aside>
+    </div>
+
+    <div class="composer">
+      <input id="cmd" placeholder="검색어 입력 — 효능(예: 고혈압 예방) 또는 어종(예: 광어) 입력 후 전송" />
+      <button id="send">전송</button>
+    </div>
+  </div>
+
+<script>
+/* ===== Data extracted from provided images (manual transcription) ===== */
+const efficacyList = [
+  "고혈압 예방","간기능 향상","성인병 예방","골다공증 예방","노화방지 및 피부미용","스태미나 효과","성장발육 촉진"
+];
+
+const detailList = [
+  "영양정보","조리법","유통정보","가공품","보관법","지역별 시즌"
+];
+
+/* Species mapped to efficacies (from images you provided).
+   Note: This is manually transcribed; a few names may need minor correction if OCR/readability issues occur.
+*/
+const mapping = {
+  "고혈압 예방": ["김","다시마","멸치","가리비","미역","톳","우뭇가사리","매생이"],
+  "간기능 향상": ["꼬막","재첩","바지락","대합","오징어","문어","낙지","대하","꽃게","주꾸미","소라"],
+  "성인병 예방": ["복어","삼치","숭어","고등어","방어","다랑어","꽁치"],
+  "골다공증 예방": ["정어리","뱅어","홍어","미더덕","연어","농어","파래","임연수어"],
+  "노화방지 및 피부미용": ["아귀","대구","병어","청어","빙어","광어","가자미"],
+  "스태미나 효과": ["해삼","멍게","성게","굴","붕장어","전복","장어","미꾸라지","전어"],
+  "성장발육 촉진": ["조기","민어","갈치","메기","잉어","새조개","참돔","가물치","쏘가리","은어"]
+};
+
+/* Build speciesList and speciesInfo from mapping */
+const speciesSet = new Set();
+Object.values(mapping).forEach(arr => arr.forEach(s => speciesSet.add(s)));
+const speciesList = Array.from(speciesSet).sort((a,b)=> a.localeCompare(b,'ko'));
+
+const speciesInfo = {};
+speciesList.forEach((name, idx) => {
+  // find efficacies this species belongs to
+  const effs = [];
+  for(const [k,arr] of Object.entries(mapping)){
+    if(arr.includes(name)) effs.push(k);
+  }
+  speciesInfo[name] = {
+    name,
+    short: `${name} — (수동 전사) ${effs.join(', ')} 효능 관련.`,
+    efficacy: effs,
+    details: {
+      "영양정보": `${name}의 영양정보: (데이터 미입력) 대표 성분 및 칼로리 정보를 입력하세요.`,
+      "조리법": `${name} 조리법 예시: 대표 요리법을 입력하세요.`,
+      "유통정보": `${name} 유통: 산지·유통 특성 기재.`,
+      "가공품": `${name} 가공품: 가공 가능성 및 품목 예.`,
+      "보관법": `${name} 보관법: 신선 보관/냉동 권장 등.`,
+      "지역별 시즌": `${name} 주요 산지 및 시즌: 예) 남해(가을)`
+    }
+  };
+});
+
+/* ===== UI refs ===== */
+const efficacyRow = document.getElementById('efficacyRow');
+const speciesRow = document.getElementById('speciesRow');
+const detailRow = document.getElementById('detailRow');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+const cmdInput = document.getElementById('cmd');
+const historyList = document.getElementById('historyList');
+const resetBtn = document.getElementById('resetBtn');
+
+let activeEfficacy = new Set();
+let activeSpecies = new Set();
+let activeDetails = new Set();
+let history = []; // store history items
+
+/* ===== Helpers ===== */
+function normalizeText(s){
+  return (s||'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+function updateSummary(){
+  const e = [...activeEfficacy].join(', ') || '없음';
+  const s = [...activeSpecies].join(', ') || '없음';
+  const d = [...activeDetails].join(', ') || '없음';
+  summary.textContent = `효능: ${e} · 어종: ${s} · 세부: ${d}`;
+}
+
+function createBtn(label, container, onClick){
+  const b = document.createElement('button');
+  b.className = 'btn';
+  b.textContent = label;
+  b.addEventListener('click', () => onClick(b));
+  container.appendChild(b);
+  return b;
+}
+
+/* Drag-to-scroll for horizontal rows (mouse drag) */
+function enableDragScroll(el){
+  let isDown=false, startX, scrollLeft;
+  el.addEventListener('mousedown', (e)=>{
+    isDown=true; el.classList.add('dragging');
+    startX = e.pageX - el.offsetLeft;
+    scrollLeft = el.scrollLeft;
+    el.style.cursor='grabbing';
+    e.preventDefault();
+  });
+  window.addEventListener('mouseup', ()=>{ isDown=false; el.classList.remove('dragging'); el.style.cursor='grab'; });
+  el.addEventListener('mouseleave', ()=>{ isDown=false; el.classList.remove('dragging'); el.style.cursor='grab'; });
+  el.addEventListener('mousemove', (e)=>{
+    if(!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startX) * 1; // scroll-fast
+    el.scrollLeft = scrollLeft - walk;
+  });
+}
+
+/* ===== Render buttons ===== */
+efficacyList.forEach(name => {
+  createBtn(name, efficacyRow, (btn) => {
+    btn.classList.toggle('active');
+    if(btn.classList.contains('active')) activeEfficacy.add(name);
+    else activeEfficacy.delete(name);
+    // click efficacy -> list all species matching that efficacy
+    listSpeciesByFilter({efficacy:Array.from(activeEfficacy)});
+    renderSpeciesButtons();
+    updateSummary();
+  });
+});
+speciesList.forEach(name => {
+  createBtn(name, speciesRow, (btn) => {
+    btn.classList.toggle('active');
+    if(btn.classList.contains('active')) activeSpecies.add(name);
+    else activeSpecies.delete(name);
+    if(btn.classList.contains('active')) appendSpeciesDetail(name);
+    updateSummary();
+  });
+});
+detailList.forEach(name => {
+  createBtn(name, detailRow, (btn) => {
+    btn.classList.toggle('active');
+    if(btn.classList.contains('active')) activeDetails.add(name);
+    else activeDetails.delete(name);
+    updateSummary();
+  });
+});
+
+// enable drag scrolling on rows
+[efficacyRow, speciesRow, detailRow].forEach(el => enableDragScroll(el));
+
+/* ===== Rendering helpers ===== */
+function appendCard(node){
+  results.appendChild(node);
+  node.scrollIntoView({behavior:'smooth', block:'end'});
+}
+
+function makeSpeciesSummaryCard(name){
+  const info = speciesInfo[name];
+  const card = document.createElement('div'); card.className='card';
+  card.innerHTML = `<h3>${info.name}</h3><div>${info.short}</div><div class="meta">관련 효능: ${info.efficacy.join(', ')}</div>`;
+  const btn = document.createElement('button'); btn.textContent='자세히'; btn.style.marginTop='8px'; btn.className='btn';
+  btn.addEventListener('click', ()=> appendSpeciesDetail(name));
+  card.appendChild(btn);
+  return card;
+}
+
+function makeSpeciesDetailCard(name){
+  const info = speciesInfo[name];
+  const card = document.createElement('div'); card.className='card';
+  const h = document.createElement('h3'); h.textContent = info.name + " — 세부정보";
+  card.appendChild(h);
+  const p = document.createElement('div'); p.textContent = info.short;
+  card.appendChild(p);
+  const eff = document.createElement('div'); eff.className='meta'; eff.textContent = '관련 효능: ' + info.efficacy.join(', ');
+  card.appendChild(eff);
+
+  const detWrap = document.createElement('div'); detWrap.style.marginTop='8px';
+  Object.keys(info.details).forEach(k => {
+    const row = document.createElement('div');
+    row.style.marginTop='6px';
+    row.innerHTML = `<strong>${k}</strong><div class="meta">${info.details[k]}</div>`;
+    detWrap.appendChild(row);
+  });
+  card.appendChild(detWrap);
+  return card;
+}
+
+/* ===== Search / List functions ===== */
+function listSpeciesByFilter({efficacy=null, query=null} = {}){
+  const normalizedEff = (efficacy||[]).map(e=>normalizeText(e));
+  const qnorm = query ? normalizeText(query) : null;
+  const matched = speciesList.filter(s=>{
+    const info = speciesInfo[s];
+    let effOk = true;
+    if(normalizedEff.length){
+      effOk = info.efficacy.some(e => normalizedEff.some(fe => normalizeText(e).includes(normalizeText(fe)) || normalizeText(fe).includes(normalizeText(e))));
+    }
+    let qOk = true;
+    if(qnorm){
+      const nameNorm = normalizeText(s);
+      const shortNorm = normalizeText(info.short);
+      const effsNorm = normalizeText(info.efficacy.join(' '));
+      qOk = nameNorm.includes(qnorm) || shortNorm.includes(qnorm) || effsNorm.includes(qnorm);
+    }
+    return effOk && qOk;
+  });
+
+  if(matched.length){
+    const header = document.createElement('div'); header.className='card'; header.innerHTML = `<div style="font-weight:700">검색 결과: ${matched.length}개 어종</div><div class="meta">조건: ${efficacy?efficacy.join(', '):''} ${query?('· 키워드: '+query):''}</div>`;
+    appendCard(header);
+    matched.forEach(name => appendCard(makeSpeciesSummaryCard(name)));
+  } else {
+    const none = document.createElement('div'); none.className='card'; none.innerHTML = `<div style="font-weight:700">검색 결과 없음</div><div class="meta">조건에 맞는 어종이 없습니다.</div>`;
+    appendCard(none);
+  }
+  addHistoryItem({type:'list', efficacy, query, resultsCount:matched.length});
+  return matched;
+}
+
+function appendSpeciesDetail(name){
+  if(!speciesInfo[name]) return;
+  activeSpecies.add(name);
+  const spBtns = Array.from(speciesRow.querySelectorAll('.btn'));
+  spBtns.forEach(b=>{ if(b.textContent===name) b.classList.add('active'); });
+  const card = makeSpeciesDetailCard(name);
+  appendCard(card);
+  addHistoryItem({type:'detail', name});
+}
+
+/* ===== History ===== */
+function addHistoryItem(obj){
+  history.unshift(obj);
+  if(history.length>50) history.pop();
+  renderHistory();
+}
+function renderHistory(){
+  historyList.innerHTML='';
+  history.forEach((h, i)=>{
+    const d = document.createElement('div'); d.style.padding='6px 0'; d.style.borderBottom='1px dashed #eee';
+    if(h.type==='list') d.innerHTML = `<div class="small"><strong>${h.resultsCount}</strong> results · ${h.efficacy?('효능: '+h.efficacy.join(',')):(h.query?'검색: '+h.query:'')}</div>`;
+    else d.innerHTML = `<div class="small">상세: ${h.name}</div>`;
+    historyList.appendChild(d);
+  });
+}
+
+/* ===== Send handler logic ===== */
+document.getElementById('send').addEventListener('click', ()=>{
+  const v = cmdInput.value.trim();
+  if(!v) return;
+  const norm = normalizeText(v);
+
+  const speciesMatch = speciesList.find(s => normalizeText(s) === norm);
+  if(speciesMatch){
+    appendSpeciesDetail(speciesMatch);
+    cmdInput.value='';
+    updateSummary();
+    return;
+  }
+
+  const matchedEfs = efficacyList.filter(e => normalizeText(e).includes(norm) || norm.includes(normalizeText(e)));
+  if(matchedEfs.length){
+    const effBtns = Array.from(efficacyRow.querySelectorAll('.btn'));
+    effBtns.forEach(b=>{ if(matchedEfs.includes(b.textContent)) b.classList.add('active'); });
+    matchedEfs.forEach(e=> activeEfficacy.add(e));
+    renderSpeciesButtons();
+    listSpeciesByFilter({efficacy:matchedEfs, query:null});
+    cmdInput.value='';
+    updateSummary();
+    return;
+  }
+
+  const matchedSpecies = listSpeciesByFilter({efficacy:null, query:v});
+  cmdInput.value='';
+  updateSummary();
+});
+
+/* Render species buttons according to active efficacy filter */
+function renderSpeciesButtons(){
+  const filterE = activeEfficacy.size ? [...activeEfficacy] : null;
+  const btns = Array.from(speciesRow.querySelectorAll('.btn'));
+  btns.forEach(b => {
+    const name = b.textContent;
+    const info = speciesInfo[name];
+    let pass = true;
+    if(filterE){
+      pass = info.efficacy.some(e => filterE.some(fe => normalizeText(e).includes(normalizeText(fe)) || normalizeText(fe).includes(normalizeText(e))));
+    }
+    b.style.display = pass ? 'inline-flex' : 'none';
+  });
+}
+
+/* Reset */
+resetBtn.addEventListener('click', ()=>{
+  activeEfficacy.clear(); activeSpecies.clear(); activeDetails.clear();
+  Array.from(document.querySelectorAll('.btn')).forEach(b => { b.classList.remove('active'); b.style.display='inline-flex'; });
+  results.innerHTML='';
+  history=[]; renderHistory();
+  updateSummary();
+});
+
+/* initial rendering: */
+renderHistory();
+
+</script>
+</body>
+</html>
